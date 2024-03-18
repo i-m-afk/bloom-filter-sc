@@ -13,26 +13,42 @@ import (
 	fnvhash "github.com/i-m-afk/bloom-filter/internal/fnv-hash"
 )
 
-// Calculated size and number of hashfunctions
-// See readme
-const BitArraySize = 1507404
-const HashNum = 15
+const (
+	BitArraySize = 1559967
+	HashNum      = 15
+	BitsPerByte  = 8
+)
 
 func main() {
 	dict := flag.String("dict", "dict.txt", "dictionary file")
+	bloomfilter := flag.String("bf", "words.bf", "bloom filter file-name")
 	flag.Parse()
 
-	bf := make([]bool, BitArraySize) // bloom filter
+	bf := make([]byte, (BitArraySize+BitsPerByte-1)/BitsPerByte) // bloom filter
 
-	err := loadDict(*dict, bf)
+	_, err := os.Stat(*bloomfilter)
+
+	if err == nil {
+		err := loadBloomFilter(*bloomfilter, bf)
+		if err != nil {
+			log.Println("failed to load bloom filter")
+			log.Fatal(err)
+		}
+		log.Println("Bloom Filter loaded successfuly")
+		spellcheckUserInput(bf)
+		return
+	}
+
+	err = loadDict(*dict, bf)
 	if err != nil {
 		log.Fatal(err)
 	}
 	test(*dict, bf)
+	saveBloomFilter(*bloomfilter, bf)
 	spellcheckUserInput(bf)
 }
 
-func loadDict(path string, arr []bool) error {
+func loadDict(path string, arr []byte) error {
 	f, err := os.Open(path)
 	if err != nil {
 		log.Fatal(err)
@@ -58,15 +74,19 @@ func loadDict(path string, arr []bool) error {
 // fnvhash produces a uint64 number.
 // this number can be divided by the total size of the bit array.
 // to prevent overflow
-func insertItems(data []byte, arr []bool) {
+// see readme to know about index calculation
+func insertItems(data []byte, arr []byte) {
 	for i := 0; i < HashNum; i++ {
 		hash := fnvhash.Fnv1(data, i)
-		arr[hash%BitArraySize] = true
+		index := hash % BitArraySize
+		byteIndex := index / BitsPerByte
+		bitIndex := index % BitsPerByte
+		arr[byteIndex] |= 1 << bitIndex
 	}
 }
 
 // testing the recall of bloom-filter
-func test(path string, arr []bool) error {
+func test(path string, arr []byte) error {
 	f, err := os.Open(path)
 	if err != nil {
 		log.Fatal(err)
@@ -97,7 +117,7 @@ func test(path string, arr []bool) error {
 }
 
 // cli for user to check there spellings
-func spellcheckUserInput(arr []bool) {
+func spellcheckUserInput(arr []byte) {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	fmt.Println("Enter a word to check its spelling: ")
@@ -117,14 +137,46 @@ func spellcheckUserInput(arr []bool) {
 	}
 }
 
-func isWordInDictionary(word string, arr []bool) bool {
-	// the word is not in the dictionary if any index if false in bloom-filter
+func isWordInDictionary(word string, arr []byte) bool {
+	// the word is not in the dictionary if any index produced by hash is false in bloom-filter
 	for i := 0; i < HashNum; i++ {
 		hash := fnvhash.Fnv1([]byte(word), i)
 		index := hash % BitArraySize
-		if !arr[index] {
+		byteIndex := index / BitsPerByte
+		bitIndex := index % BitsPerByte
+		if (arr[byteIndex] & (1 << bitIndex)) == 0 {
 			return false
 		}
 	}
 	return true
+}
+
+// save the bloom filter data in bytes
+func saveBloomFilter(filename string, arr []byte) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+
+	writer := bufio.NewWriter(file)
+	_, err = writer.Write(arr)
+	if err != nil {
+		return err
+	}
+	return writer.Flush()
+}
+
+func loadBloomFilter(filename string, arr []byte) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	reader := bufio.NewReader(file)
+	_, err = reader.Read(arr)
+	if err != nil {
+		return err
+	}
+	return nil
 }
