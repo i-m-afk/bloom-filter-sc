@@ -1,7 +1,11 @@
+/*
+* Author: Rishav Kumar
+ */
 package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -9,16 +13,22 @@ import (
 	fnvhash "github.com/i-m-afk/bloom-filter/internal/fnv-hash"
 )
 
-const BitArraySize = 1000000
+// Calculated size and number of hashfunctions
+// See readme
+const BitArraySize = 1507404
+const HashNum = 15
 
 func main() {
+	dict := flag.String("dict", "dict.txt", "dictionary file")
+	flag.Parse()
+
 	bf := make([]bool, BitArraySize) // bloom filter
 
-	err := loadDict("./dict.txt", bf)
+	err := loadDict(*dict, bf)
 	if err != nil {
 		log.Fatal(err)
 	}
-	test("./dict.txt", bf)
+	test(*dict, bf)
 	spellcheckUserInput(bf)
 }
 
@@ -44,29 +54,15 @@ func loadDict(path string, arr []bool) error {
 	return nil
 }
 
-// insert items to bool array
+// insert items to bool array (bloom filter)
 // fnvhash produces a uint64 number.
 // this number can be divided by the total size of the bit array.
 // to prevent overflow
-// TODO: this is highly redundant, because of hash functions.
-// hash functions can also be produced by variation introduced here
 func insertItems(data []byte, arr []bool) {
-	o := fnvhash.Fnv1(data) % BitArraySize
-	a := fnvhash.Fnv1a(data) % BitArraySize
-	b := fnvhash.Fnv1a(data) % BitArraySize
-	c := fnvhash.Fnv1c(data) % BitArraySize
-	d := fnvhash.Fnv1d(data) % BitArraySize
-	e := fnvhash.Fnv1e(data) % BitArraySize
-	f := fnvhash.Fnv1f(data) % BitArraySize
-	g := fnvhash.Fnv1g(data) % BitArraySize
-	arr[o] = true
-	arr[a] = true
-	arr[b] = true
-	arr[c] = true
-	arr[d] = true
-	arr[e] = true
-	arr[f] = true
-	arr[g] = true
+	for i := 0; i < HashNum; i++ {
+		hash := fnvhash.Fnv1(data, i)
+		arr[hash%BitArraySize] = true
+	}
 }
 
 // testing the recall of bloom-filter
@@ -122,20 +118,10 @@ func spellcheckUserInput(arr []bool) {
 }
 
 func isWordInDictionary(word string, arr []bool) bool {
-	// Check each hash function's index in the bit array
-	indices := []uint64{
-		fnvhash.Fnv1([]byte(word)) % BitArraySize,
-		fnvhash.Fnv1a([]byte(word)) % BitArraySize,
-		fnvhash.Fnv1b([]byte(word)) % BitArraySize,
-		fnvhash.Fnv1c([]byte(word)) % BitArraySize,
-		fnvhash.Fnv1d([]byte(word)) % BitArraySize,
-		fnvhash.Fnv1e([]byte(word)) % BitArraySize,
-		fnvhash.Fnv1f([]byte(word)) % BitArraySize,
-		fnvhash.Fnv1g([]byte(word)) % BitArraySize,
-	}
-
 	// the word is not in the dictionary if any index if false in bloom-filter
-	for _, index := range indices {
+	for i := 0; i < HashNum; i++ {
+		hash := fnvhash.Fnv1([]byte(word), i)
+		index := hash % BitArraySize
 		if !arr[index] {
 			return false
 		}
