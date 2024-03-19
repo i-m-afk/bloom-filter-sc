@@ -13,7 +13,7 @@ func Fnv1(data []byte, index int) uint64 {
 		hash *= FNV_prime
 		hash ^= uint64(b)
 	}
-	return hash + uint64(index)
+	return hash*Fnv1a(data, index) + uint64(index)
 }
 
 func Fnv1a(data []byte, index int) uint64 {

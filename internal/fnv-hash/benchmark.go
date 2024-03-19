@@ -23,10 +23,16 @@ func Hashbench() {
 	// collisions count
 	collisions := 0
 	for _, count := range hashCounts {
-		fmt.Println(count)
 		if count > 1 {
-			collisions += count
+			collisions += count - 1
 		}
 	}
 	fmt.Printf("Total collisions : %d\n", collisions)
+}
+
+func HashSpread(data string) {
+	for i := 0; i < 15; i++ {
+		hash := Fnv1([]byte(data), i)
+		fmt.Println(hash % 1559967)
+	}
 }
