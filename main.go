@@ -5,6 +5,8 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -17,6 +19,7 @@ const (
 	BitArraySize = 1559967
 	HashNum      = 15
 	BitsPerByte  = 8
+	HeaderSize   = 12
 )
 
 func main() {
@@ -160,6 +163,13 @@ func saveBloomFilter(filename string, arr []byte) error {
 	defer file.Close()
 
 	writer := bufio.NewWriter(file)
+
+	header := createHeader()
+	_, err = writer.Write(header)
+	if err != nil {
+		return err
+	}
+
 	_, err = writer.Write(arr)
 	if err != nil {
 		return err
@@ -172,11 +182,79 @@ func loadBloomFilter(filename string, arr []byte) error {
 	if err != nil {
 		return err
 	}
+	err = verifyHeader(file)
+	if err != nil {
+		return err
+	}
 	defer file.Close()
 	reader := bufio.NewReader(file)
 	_, err = reader.Read(arr)
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+// Headers as per challenge description
+func createHeader() []byte {
+	head := make([]byte, 0)
+	head = append(head, []byte("CCBF")...)
+	// version
+	version := 1
+	head = append(head, byte(version>>8))
+	head = append(head, byte(version))
+
+	// number of hash
+	numHash := HashNum
+	head = append(head, byte(numHash>>8))
+	head = append(head, byte(numHash))
+
+	var size int64 = BitArraySize
+	// big endian notation (4 bytes)
+	head = append(head, byte(size>>24))
+	head = append(head, byte(size>>16))
+	head = append(head, byte(size>>8))
+	head = append(head, byte(size))
+	return head
+}
+
+func verifyHeader(file *os.File) error {
+	header := make([]byte, HeaderSize)
+	_, err := file.Read(header)
+	if err != nil {
+		return err
+	}
+	// Identifier
+	expect := []byte("CCBF")
+	if !bytes.Equal(header[:4], expect) {
+		return errors.New("Invalid Identifier")
+	}
+	// version
+	version := 1
+	expectedVersion := make([]byte, 2)
+	expectedVersion = append(expectedVersion, byte(version>>8))
+	expectedVersion = append(expectedVersion, byte(version))
+
+	if bytes.Equal(expectedVersion, header[4:6]) {
+		return errors.New("Invalid Version")
+	}
+	// num hash
+	hashNum := HashNum
+	expectedHashNum := make([]byte, 2)
+	expectedHashNum = append(expectedHashNum, byte(hashNum>>8))
+	expectedHashNum = append(expectedHashNum, byte(hashNum))
+
+	if bytes.Equal(expectedHashNum, header[6:8]) {
+		return errors.New("Invalid Number of hash Function")
+	}
+	expectedBitArraySize := make([]byte, 0)
+	var size int64 = BitArraySize
+	expectedBitArraySize = append(expectedBitArraySize, byte(size>>24))
+	expectedBitArraySize = append(expectedBitArraySize, byte(size>>16))
+	expectedBitArraySize = append(expectedBitArraySize, byte(size>>8))
+	expectedBitArraySize = append(expectedBitArraySize, byte(size))
+	if !bytes.Equal(header[8:], expectedBitArraySize) {
+		return errors.New("Invalid bit array size")
 	}
 	return nil
 }
